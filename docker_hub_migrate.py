@@ -192,3 +192,106 @@ class DockerHubMigrator:
             print(f"Error tagging image: {e}")
             print(e.stderr)
             return False
+    
+    def docker_push(self, repo_name, tag):
+        """Push a Docker image to the target organization"""
+        target_image = f"{self.target_org}/{repo_name}:{tag}"
+        print(f"Pushing {target_image}...")
+        
+        try:
+            result = subprocess.run(
+                ["docker", "push", target_image],
+                check=True,
+                capture_output=True,
+                text=True
+            )
+            print(result.stdout)
+            return True
+        except subprocess.CalledProcessError as e:
+            print(f"Error pushing image: {e}")
+            print(e.stderr)
+            return False
+    
+    def migrate_repository_with_images(self, repo):
+        """Migrate a repository with all its images from source to target org"""
+        repo_name = repo["name"]
+        repo_description = repo.get("description", "")
+        
+        print(f"\nMigrating {self.source_org}/{repo_name} to {self.target_org}/{repo_name}...")
+        
+        # Create the repository in the target organization
+        if not self.create_repository(repo_name, repo_description):
+            return False
+        
+        # Get all tags for this repository
+        tags = self.get_tags(repo_name)
+        if not tags:
+            print(f"No tags found for {repo_name}, using 'latest'")
+            tags = ["latest"]
+        
+        success_count = 0
+        for tag in tags:
+            print(f"\nProcessing {repo_name}:{tag}")
+            
+            # Pull, tag, and push the image
+            if not self.docker_pull(repo_name, tag):
+                print(f"Failed to pull {repo_name}:{tag}, skipping...")
+                continue
+                
+            if not self.docker_tag(repo_name, tag):
+                print(f"Failed to tag {repo_name}:{tag}, skipping...")
+                continue
+                
+            if not self.docker_push(repo_name, tag):
+                print(f"Failed to push {repo_name}:{tag}, skipping...")
+                continue
+                
+            success_count += 1
+            
+        print(f"Successfully migrated {success_count}/{len(tags)} tags for {repo_name}")
+        return success_count > 0
+    
+    def migrate_all_repositories(self):
+        """Migrate all private repositories from source to target org"""
+        if not self.authenticate():
+            return False
+            
+        if not self.docker_login():
+            return False
+        
+        repositories = self.get_repositories()
+        if not repositories:
+            return False
+        
+        success_count = 0
+        for repo in repositories:
+            print("\n" + "-" * 50)
+            if self.migrate_repository_with_images(repo):
+                success_count += 1
+            time.sleep(1)  # Avoid rate limiting
+        
+        print("\n" + "=" * 50)
+        print(f"Migration summary: {success_count}/{len(repositories)} repositories processed.")
+        return True
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Migrate private Docker Hub repositories between organizations")
+    parser.add_argument("source_org", help="Source Docker Hub organization")
+    parser.add_argument("target_org", help="Target Docker Hub organization")
+    parser.add_argument("-u", "--username", help="Docker Hub username")
+    
+    args = parser.parse_args()
+    
+    if not args.username:
+        args.username = input("Docker Hub username: ")
+    
+    password = getpass("Docker Hub password: ")
+    
+    migrator = DockerHubMigrator(args.username, password, args.source_org, args.target_org)
+    if not migrator.migrate_all_repositories():
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
