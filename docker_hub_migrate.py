@@ -117,3 +117,39 @@ class DockerHubMigrator:
             "description": repo_description,
             "is_private": True
         }
+        
+        try:
+            response = requests.post(create_url, data=json.dumps(create_data), headers=self.headers)
+            response.raise_for_status()
+            print(f"Created repository {self.target_org}/{repo_name}")
+            return True
+        except requests.exceptions.RequestException as e:
+            if "already exists" in str(e):
+                print(f"Repository {self.target_org}/{repo_name} already exists")
+                return True
+            
+            print(f"Error creating repository {repo_name}: {e}")
+            # Print detailed error response if available
+            try:
+                error_details = e.response.json()
+                print(f"Error details: {json.dumps(error_details, indent=2)}")
+            except:
+                print("Could not parse error details")
+            
+            # Check if the issue is with organization access
+            print(f"Checking permissions for organization {self.target_org}...")
+            try:
+                org_check_url = f"{self.api_base}user/orgs/"
+                org_response = requests.get(org_check_url, headers=self.headers)
+                org_response.raise_for_status()
+                orgs = org_response.json()
+                
+                # Check if target org is in user's organizations
+                org_names = [org["orgname"] for org in orgs["results"]]
+                if self.target_org not in org_names:
+                    print(f"WARNING: You may not have access to organization '{self.target_org}'")
+                    print(f"Available organizations: {', '.join(org_names)}")
+            except Exception as org_error:
+                print(f"Could not verify organization access: {org_error}")
+                
+            return False
