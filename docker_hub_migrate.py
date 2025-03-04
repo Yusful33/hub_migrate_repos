@@ -68,3 +68,52 @@ class DockerHubMigrator:
             print(f"Docker login failed: {e}")
             print(f"Error output: {e.stderr}")
             return False
+    
+    def get_repositories(self):
+        """Get list of private repositories in the source organization"""
+        print(f"Fetching repositories from {self.source_org}...")
+        repos = []
+        page = 1
+        page_size = 100
+        
+        while True:
+            repo_url = f"{self.api_base}repositories/{self.source_org}?page={page}&page_size={page_size}"
+            try:
+                response = requests.get(repo_url, headers=self.headers)
+                response.raise_for_status()
+                data = response.json()
+                
+                # Filter for private repositories
+                private_repos = [repo for repo in data["results"] if repo["is_private"]]
+                repos.extend(private_repos)
+                
+                if not data["next"]:
+                    break
+                page += 1
+            except requests.exceptions.RequestException as e:
+                print(f"Error fetching repositories: {e}")
+                return None
+        
+        print(f"Found {len(repos)} private repositories in {self.source_org}")
+        return repos
+    
+    def get_tags(self, repo_name):
+        """Get all tags for a repository"""
+        tags_url = f"{self.api_base}repositories/{self.source_org}/{repo_name}/tags"
+        try:
+            response = requests.get(tags_url, headers=self.headers)
+            response.raise_for_status()
+            tags = response.json()["results"]
+            return [tag["name"] for tag in tags]
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching tags for {repo_name}: {e}")
+            return ["latest"]  # Default to latest if we can't get tags
+    
+    def create_repository(self, repo_name, repo_description=""):
+        """Create a new repository in the target organization"""
+        create_url = f"{self.api_base}repositories/{self.target_org}"
+        create_data = {
+            "name": repo_name,
+            "description": repo_description,
+            "is_private": True
+        }
