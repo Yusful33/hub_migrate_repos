@@ -153,3 +153,42 @@ class DockerHubMigrator:
                 print(f"Could not verify organization access: {org_error}")
                 
             return False
+    
+    def docker_pull(self, repo_name, tag):
+        """Pull a Docker image"""
+        source_image = f"{self.source_org}/{repo_name}:{tag}"
+        print(f"Pulling {source_image}...")
+        
+        try:
+            result = subprocess.run(
+                ["docker", "pull", source_image],
+                check=True,
+                capture_output=True,
+                text=True
+            )
+            print(result.stdout)
+            return True
+        except subprocess.CalledProcessError as e:
+            print(f"Error pulling image: {e}")
+            print(e.stderr)
+            return False
+    
+    def docker_tag(self, repo_name, tag):
+        """Tag a Docker image for the target organization"""
+        source_image = f"{self.source_org}/{repo_name}:{tag}"
+        target_image = f"{self.target_org}/{repo_name}:{tag}"
+        print(f"Tagging {source_image} as {target_image}...")
+        
+        try:
+            result = subprocess.run(
+                ["docker", "tag", source_image, target_image],
+                check=True,
+                capture_output=True,
+                text=True
+            )
+            print(result.stdout)
+            return True
+        except subprocess.CalledProcessError as e:
+            print(f"Error tagging image: {e}")
+            print(e.stderr)
+            return False
